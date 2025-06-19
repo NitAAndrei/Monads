@@ -1,4 +1,3 @@
-
 Require Import String.
 Open Scope string_scope.
 
@@ -318,7 +317,7 @@ Qed.
 (* Left Identity *)
 Lemma reader_left_identity :
   forall (R A B : Type) (x : A) (f : A -> Reader R B) (r : R),
-    reader_bind (reader_return x) f = f x.
+    reader_bind (reader_return x) f r = f x r.
 Proof.
   intros. reflexivity.
 Qed.
@@ -825,22 +824,385 @@ Qed.
 (* The State‐transformer type, parametrized by any base monad M with its own return and bind 
   operations. *)
 
+
+From Coq Require Import Relations Classes.Equivalence Classes.Morphisms.
+Open Scope signature_scope.
+
 Class Monad (M : Type -> Type) : Type := {
   returnM  : forall {A}, A -> M A ;
-  bindM : forall {A B}, M A -> (A -> M B) -> M B
+  bindM : forall {A B}, M A -> (A -> M B) -> M B ;
+  eqM   {A} : relation (M A);
 }.
 
 Arguments returnM  {M _ A} _.
 Arguments bindM {M _ A B} _ _.
+Arguments eqM {M _ A} _ _.
+Notation "x == y" := (eqM x y) (at level 80).
+
+
+Class MonadLaws (M : Type -> Type) `{Monad M} := {
+    eqM_Equivalence :: forall A, Equivalence (@eqM M _ A);
+
+    monad_left_id {A B} (x : A) (f : A -> M B) :
+       bindM (returnM x) f == f x;
+
+    monad_right_id {A} (m : M A) :
+       bindM m returnM == m;
+
+    monad_assoc {A B C} (m : M A) (f : A -> M B) (g : B -> M C) :
+       bindM (bindM m f) g == bindM m (fun x => bindM (f x) g);
+
+    bindM_Proper {A B} :: Proper (eqM ==> (eq ==> eqM) ==> eqM)
+                 (bindM (A:=A) (B:=B))
+}.
+
+
+Definition reader_eq {R} A : relation (Reader R A) :=
+  fun m1 m2 => forall r, m1 r = m2 r.
+
+Instance reader_monad R : Monad (Reader R) := {
+    returnM A x := reader_return x;
+    bindM A B m f := reader_bind m f;
+    eqM A x y := reader_eq A x y;
+  }.
+
+Instance reader_eq_equiv {R} A : Equivalence (reader_eq (R:=R) A).
+Proof. 
+  split.
+  - unfold Reflexive.
+    intro x. unfold reader_eq.
+    intros r . reflexivity.
+  - unfold Symmetric, reader_eq.
+    intros. rewrite H. reflexivity.
+  - unfold Transitive, reader_eq.
+   intros. rewrite H. apply H0.
+Qed.
+
+Program Instance reader_monad_laws R : MonadLaws (Reader R).
+Next Obligation.
+  unfold reader_eq; intros.
+  apply reader_left_identity.
+Qed.
+Next Obligation.
+  unfold reader_eq; intros.
+  apply reader_right_identity.
+Qed.
+Next Obligation.
+  unfold reader_eq, reader_bind. reflexivity.
+Qed.
+Next Obligation.
+  intros x1 x2 Hx f1 f2 Hf.
+  intros r. unfold reader_bind.
+  apply Hf. apply Hx.
+Qed.
+
+
+Definition maybe_eq {A} : relation (Maybe A) :=
+  fun x y => x = y.
+
+Instance maybe_monad : Monad Maybe := {
+   returnM A x := maybe_return x;
+   bindM A B m f := maybe_bind m f;
+   eqM A := maybe_eq
+}.
+
+Instance maybe_eq_equiv {A : Type} : Equivalence (maybe_eq (A := A)).
+Proof.
+  split.
+  - intros x.
+    destruct x as [y |].
+    + reflexivity.
+    + reflexivity.
+  - intros x y H.
+    destruct x as [x' |].
+    + destruct y as [y' |].
+      * rewrite <- H. reflexivity.
+      * discriminate H.
+    + destruct y as [y' |].
+      * discriminate H.
+      * reflexivity.
+  - intros x y z Hxy Hyz.
+    destruct x as [x' |].
+    + destruct y as [y' |].
+      * destruct z as [z' |].
+        -- rewrite Hxy, Hyz. reflexivity.
+        -- discriminate Hyz.
+      * discriminate Hxy.
+    + destruct y as [y' |].
+      * discriminate Hxy.
+      * destruct z as [z' |].
+        -- discriminate Hyz.
+        -- reflexivity.
+Qed.
+
+
+Program Instance maybe_monad_laws : MonadLaws Maybe.
+Next Obligation.
+  unfold maybe_eq. reflexivity.
+Qed.
+Next Obligation.
+  unfold maybe_eq, maybe_bind, maybe_return.
+  apply maybe_right_identity.
+Qed.
+Next Obligation.
+  unfold maybe_eq, maybe_bind.
+  apply maybe_associativity.
+Qed.
+Next Obligation.
+  intros m1 m2 Hm f1 f2 Hf.
+  unfold maybe_eq, maybe_bind.
+  destruct m1 as [x1|], m2 as [x2|]; simpl; try contradiction.
+  - inversion Hm.
+    apply Hf. reflexivity.
+  - discriminate Hm.
+  - discriminate Hm.
+  - reflexivity. 
+Qed.
+
+
+
+Definition exception_eq {A} : relation (Exception A) :=
+  fun x y => x = y.
+
+Instance exception_monad : Monad Exception := {
+  returnM A x := exception_return x;
+  bindM A B m f := exception_bind m f;
+  eqM A := exception_eq
+}.
+
+Instance exception_eq_equiv {A} : Equivalence (exception_eq (A:=A)).
+Proof.
+  split.
+  - intros x.
+    destruct x as [a | msg].
+    + reflexivity.
+    + reflexivity.
+  - intros x y H.
+    destruct x as [a1 | msg1], y as [a2 | msg2].
+    + destruct H. reflexivity.
+    + discriminate H.
+    + discriminate H.
+    + destruct H. reflexivity.
+  - intros x y z Hxy Hyz.
+    destruct x as [a1 | msg1], y as [a2 | msg2], z as [a3 | msg3].
+    + destruct Hxy, Hyz. reflexivity.
+    + discriminate Hyz.
+    + discriminate Hyz.
+    + discriminate Hxy.
+    + discriminate Hxy.
+    + destruct Hxy, Hyz. reflexivity.
+    + discriminate.
+    + destruct Hxy, Hyz. reflexivity.
+Qed.
+
+Program Instance exception_monad_laws : MonadLaws Exception.
+Next Obligation.
+  unfold exception_eq.
+  apply exception_left_identity.
+Qed.
+Next Obligation.
+  unfold exception_eq, exception_bind, exception_return.
+  apply exception_right_identity.
+Qed.
+Next Obligation.
+  unfold exception_eq, exception_bind.
+  apply exception_associativity.
+Qed.
+Next Obligation.
+  intros m1 m2 Hm f1 f2 Hf.
+  unfold exception_eq, exception_bind.
+  destruct m1 as [x1|e1], m2 as [x2|e2].
+  - inversion Hm.
+    apply Hf. reflexivity.    
+  - discriminate.
+  - discriminate.
+  - inversion Hm. reflexivity.
+Qed.
+
+
+
+Definition state_eq {S A} : relation (State S A) :=
+  fun m1 m2 => forall s, m1 s = m2 s.
+
+Instance state_monad (S : Type) : Monad (State S) := {
+  returnM A x := state_return x;
+  bindM A B m f := state_bind m f;
+  eqM A m1 m2 := state_eq m1 m2
+}.
+
+Instance state_eq_equiv {S A} : Equivalence (state_eq (S:=S) (A:=A)).
+Proof.
+  split.
+  - unfold Reflexive, state_eq. reflexivity.
+  - unfold Symmetric, state_eq. intros. rewrite <- H. reflexivity.
+  - unfold Transitive, state_eq. intros. rewrite <- H0, H. reflexivity.
+Qed.
+
+
+Program Instance state_monad_laws (S : Type) : MonadLaws (State S).
+Next Obligation.
+  unfold state_eq, state_bind, state_return.
+  intros. reflexivity.
+Qed.
+Next Obligation.
+  unfold state_eq, state_bind, state_return.
+  intros s. apply state_right_identity.
+Qed.
+Next Obligation.
+  unfold state_eq, state_bind.
+  intros s. apply state_associativity.
+Qed.
+Next Obligation.
+  intros m1 m2 Hm f1 f2 Hf s.
+  unfold state_eq, state_bind.
+  rewrite Hm.
+  destruct (m2 s) as [a s'].
+  apply Hf.
+  reflexivity.
+Qed.
+
+
+
+Definition identity_eq {A} : relation (Identity A) := fun x y => x = y.
+
+Instance identity_monad : Monad Identity := {
+  returnM A x := identity_return x;
+  bindM A B m f := identity_bind m f;
+  eqM A := identity_eq
+}.
+
+Instance identity_eq_equiv {A} : Equivalence (identity_eq (A:=A)).
+Proof.
+  split.
+  - unfold Reflexive, identity_eq. reflexivity.
+  - unfold Symmetric, identity_eq. intros. rewrite <- H. reflexivity.
+  - unfold Transitive, identity_eq. intros. rewrite H, H0. reflexivity.
+Qed.
+
+Program Instance identity_monad_laws : MonadLaws Identity.
+Next Obligation.
+  unfold identity_eq, identity_bind, identity_return.
+  reflexivity.
+Qed.
+Next Obligation.
+  unfold identity_eq, identity_bind, identity_return.
+  reflexivity.
+Qed.
+Next Obligation.
+  unfold identity_eq, identity_bind.
+  reflexivity.
+Qed.
+Next Obligation.
+  intros m1 m2 Hm f1 f2 Hf.
+  unfold identity_bind, identity_eq.
+  rewrite Hm.
+  apply Hf. reflexivity.
+Qed.
+
+
+
+Definition writer_eq {A} : relation (Writer A) := fun x y => x = y.
+
+Instance writer_monad : Monad Writer := {
+  returnM A x := writer_return x;
+  bindM A B m f := writer_bind m f;
+  eqM A := writer_eq
+}.
+
+Instance writer_eq_equiv {A} : Equivalence (writer_eq (A:=A)).
+Proof.
+  split.
+  - unfold Reflexive, writer_eq.  intros x. reflexivity.
+  - unfold Symmetric, writer_eq. intros x y H. rewrite H. reflexivity.
+  - unfold Transitive, writer_eq. intros x y z H H'. rewrite H, H'. reflexivity.
+Qed.
+
+Program Instance writer_monad_laws : MonadLaws Writer.
+Next Obligation.
+  unfold writer_eq, writer_bind, writer_return.
+  destruct (f x) as [b log]. reflexivity.
+Qed.
+Next Obligation.
+  unfold writer_eq, writer_bind, writer_return.
+  destruct m as [a log].
+  apply f_equal.
+  apply string_append_empty_r.
+Qed.
+Next Obligation.
+  unfold writer_eq, writer_bind.
+  intros.
+  destruct m as [a log1].
+  destruct (f a) as [b log2].
+  destruct (g b) as [c log3].
+  rewrite string_append_assoc.
+  reflexivity.
+Qed.
+Next Obligation.
+  intros m1 m2 Hm f1 f2 Hf.
+  unfold writer_bind, writer_eq.
+  destruct m1 as [a1 log1], m2 as [a2 log2].
+  destruct (f1 a1) as [b1 l1], (f2 a2) as [b2 l2].
+  Admitted.
+
+
+
 
 Definition StateT (S : Type) (M : Type -> Type) `{Monad M} (A : Type) : Type :=
   S -> M (prod A S).
+
 
 Definition stateT_return {S M A} `{Monad M} (x : A) : StateT S M A :=
   fun s => returnM (x, s).
 
 Definition stateT_bind {S M A B} {MonadM : Monad M} (m : StateT S M A) (k : A -> StateT S M B) : StateT S M B :=
   fun s => bindM (m s) (fun (p : A * S) => let (a, s') := p in k a s').
+
+
+Definition statet_eq {S} M `{Monad M}  A : relation (StateT S M A) :=
+  fun m1 m2 => forall s, m1 s == m2 s.
+
+Instance stateT_monad S M `{Monad M} : Monad (StateT S M) :=
+  {
+    returnM A x := stateT_return x;
+    bindM A B m f := stateT_bind m f;
+    eqM A x y := statet_eq M A x y;
+  }.
+
+
+Instance statet_eq_equiv {S} M `{Monad M} `{MonadLaws M} A :
+  Equivalence (statet_eq (S:=S) M A).
+Proof.
+  split.
+  - unfold Reflexive, statet_eq. reflexivity.
+  - unfold Symmetric, state_eq. intros m1 m2 H2 s. admit.
+  - unfold Transitive, state_eq. intros m1 m2 m3 H2 H3 s. rewrite H12.
+Qed.
+
+Program Instance stateT_monad_laws S M `{Monad M} `{MonadLaws M} :
+  MonadLaws (StateT S M).
+
+Obligation 2.
+unfold statet_eq.
+unfold stateT_bind, stateT_return.
+intros r.
+transitivity (bindM (m r) returnM).
+- f_equiv. intros [p1 p2] [p1' p2'].
+  intro Heq. rewrite Heq. reflexivity.
+- apply monad_right_id.
+Qed.
+
+
+(*rewrite monad_left_id.*)
+
+
+
+
+
+
+
+
+
+
 
 Definition liftT {S M A} `{Monad M} (ma : M A) : StateT S M A :=
   fun s => bindM ma (fun a => returnM (a, s)).
