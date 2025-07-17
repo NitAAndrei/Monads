@@ -171,27 +171,6 @@ Definition identity_bind {A B : Type} (m : Identity A) (f : A -> Identity B) : I
   f m.
 
 
-(* Continuation Monad *)
-Definition Cont (R A : Type) := (A -> R) -> R.
-
-Definition cont_return {R A : Type} (x : A) : Cont R A :=
-  fun k => k x.
-
-
-(* Probabilistic Monad *)
-Require Import List.
-Import ListNotations.
-
-Definition Prob (A : Type) := list A.
-
-Definition prob_return {A : Type} (x : A) : Prob A :=
-  [x].
-
-Definition prob_bind {A B : Type} (m : Prob A) (f : A -> Prob B) : Prob B :=
-  concat (map f m).
-
-
-
 (* 
 
 PROOFS OF MONAD LAWS 
@@ -396,7 +375,7 @@ Lemma writer_associativity :
          (g : B -> Writer C),
     writer_bind (writer_bind m f) g = writer_bind m (fun x => writer_bind (f x) g).
 Proof.
-  intros. unfold writer_bind, writer_return. 
+  intros. unfold writer_bind. 
   - destruct m as [a log1]. 
   destruct (f a) as [b log2]. 
   destruct (g b) as [c log3]. rewrite string_append_assoc.  reflexivity.
@@ -601,55 +580,55 @@ Compute exampleGCD.
 (* (put s1 >>= fun _ => put s2 = put s2): doing two puts in a row, the second wins *)
 Lemma put_put :
   forall (S : Type) (s1 s2 : S),
-    state_bind (state_put (S:=S) s1) (fun _ => state_put s2)
+    state_bind (state_put s1) (fun _ => state_put s2)
     = state_put s2.
 Proof.
-  intros; unfold state_bind, state_put; simpl; reflexivity.
+  intros. unfold state_bind, state_put. reflexivity.
 Qed.
 
 (* (put s >>= fun _ => get = put s >>= fun _ => return s): writing then reading the state returns that state *)
 Lemma put_get_return :
   forall (S : Type) (s : S),
-    state_bind (state_put s) (fun _ => state_get (S:=S))
-     = state_bind (state_put (S:=S) s) (fun _ => state_return (S:=S) s).
+    state_bind (state_put s) (fun _ => state_get )
+     = state_bind (state_put s) (fun _ => state_return s).
 Proof.
-  intros; unfold state_bind, state_put, state_get, state_return; simpl; reflexivity.
+  intros. unfold state_bind, state_put, state_get, state_return. reflexivity.
 Qed.
 
 (* (get >>= fun s => f s = fun t => f t t): generic get–bind feeds the same state into f twice *)
 Lemma get_bind :
   forall (S A : Type) (f : S -> State S A),
-    state_bind (state_get (S:=S)) f
+    state_bind (state_get) f
     = fun t => f t t.
 Proof.
-  intros; unfold state_bind, state_get; simpl; reflexivity.
+  intros. unfold state_bind, state_get. reflexivity.
 Qed.
 
 (* (put s >>= fun _ => get = put s >>= fun _ => return s): putting then getting equals putting then returning *)
 Lemma put_get :
   forall (S : Type) (s : S),
-    state_bind (state_put (S:=S) s) (fun _ => state_get (S:=S))
-    = state_bind (state_put (S:=S) s) (fun _ => state_return (S:=S) s).
+    state_bind (state_put s) (fun _ => state_get)
+    = state_bind (state_put s) (fun _ => state_return s).
 Proof.
-  intros; unfold state_bind, state_put, state_get, state_return; simpl; reflexivity.
+  intros. unfold state_bind, state_put, state_get, state_return. reflexivity.
 Qed.
 
 (* (get >>= fun s => put s = return tt): reading then writing the same state is a no-op *)
 Lemma get_put :
   forall (S : Type),
     state_bind (state_get (S:=S)) (fun s => state_put s)
-    = state_return (S:=S) tt.
+    = state_return tt.
 Proof.
-  intros; unfold state_bind, state_get, state_put, state_return; simpl; reflexivity.
+  intros. unfold state_bind, state_get, state_put, state_return. reflexivity.
 Qed.
 
 (* (get >>= fun _ => get = get): reading twice is the same as reading once *)
 Lemma get_get :
   forall (S : Type),
-    state_bind (state_get (S:=S)) (fun _ => state_get (S:=S))
-    = state_get (S:=S).
+    state_bind (state_get (S:=S)) (fun _ => state_get)
+    = state_get.
 Proof.
-  intros; unfold state_bind, state_get; simpl; reflexivity.
+  intros. unfold state_bind, state_get. reflexivity.
 Qed.
 
 
@@ -704,17 +683,17 @@ Qed.
     returning f x *)
 Lemma local_ask_bind :
   forall (R A : Type) (f : R -> R),
-    local f (ask (R:=R))
-  = reader_bind (ask (R:=R)) (fun x => reader_return (R:=R) (f x)).
+    local f (ask )
+  = reader_bind (ask) (fun x => reader_return (f x)).
 Proof.
-  intros. unfold local, reader_bind, reader_return. reflexivity.
+  intros. unfold ask, local, reader_bind, reader_return. reflexivity.
 Qed.
 
 (* (local f (reader_return x) = reader_return x): pushing f into a constant result does nothing *)
 Lemma local_return :
   forall (R A : Type) (f : R -> R) (x : A),
-    local f (reader_return (R:=R) x)
-  = reader_return (R:=R) x.
+    local f (reader_return x)
+  = reader_return x.
 Proof.
   intros. unfold local, reader_return. reflexivity.
 Qed.
@@ -732,7 +711,7 @@ Qed.
 Lemma local_local :
   forall (R A : Type) (f g : R -> R) (m : Reader R A),
     local f (local g m)
-  = local (fun r => g (f r)) (R:=R) m.
+  = local (fun r => g (f r)) m.
 Proof.
   intros. unfold local. reflexivity.
 Qed.
@@ -740,8 +719,8 @@ Qed.
 (* (reader_bind ask reader_return = ask): ask then return gives the environment *)
 Lemma ask_return :
   forall (R : Type),
-    reader_bind (ask (R:=R)) (fun x => reader_return (R:=R) x)
-  = ask (R:=R).
+    reader_bind (ask (R:=R)) (fun x => reader_return x)
+  = ask.
 Proof.
   intros. unfold reader_bind, reader_return, ask. reflexivity.
 Qed.
@@ -749,8 +728,8 @@ Qed.
 (* (reader_bind ask (fun _ => ask) = ask): asking twice is the same as asking once *)
 Lemma ask_ask :
   forall (R : Type),
-    reader_bind (ask (R:=R)) (fun _ => ask (R:=R))
-  = ask (R:=R).
+    reader_bind (ask (R:=R)) (fun _ => ask)
+  = ask.
 Proof.
   intros. unfold reader_bind, ask. reflexivity.
 Qed.
@@ -1141,10 +1120,12 @@ Next Obligation.
   intros m1 m2 Hm f1 f2 Hf.
   unfold writer_bind, writer_eq.
   destruct m1 as [a1 log1], m2 as [a2 log2].
-  destruct (f1 a1) as [b1 l1], (f2 a2) as [b2 l2].
-  Admitted.
-
-
+  unfold writer_eq in Hm.
+  inversion Hm; subst.
+  assert (f1 a2 = f2 a2) as Hf1f2.
+  { apply Hf. reflexivity. }
+  rewrite Hf1f2. reflexivity.
+Qed.
 
 
 Definition StateT (S : Type) (M : Type -> Type) `{Monad M} (A : Type) : Type :=
@@ -1169,39 +1150,59 @@ Instance stateT_monad S M `{Monad M} : Monad (StateT S M) :=
   }.
 
 
-Instance statet_eq_equiv {S} M `{Monad M} `{MonadLaws M} A :
+Instance statet_eq_equiv {S} M `{MonadLaws M} A :
   Equivalence (statet_eq (S:=S) M A).
 Proof.
   split.
   - unfold Reflexive, statet_eq. reflexivity.
-  - unfold Symmetric, state_eq. intros m1 m2 H2 s. admit.
-  - unfold Transitive, state_eq. intros m1 m2 m3 H2 H3 s. rewrite H12.
+  - unfold Symmetric, state_eq. intros m1 m2 H2 s.
+    symmetry. apply H2.
+  - unfold Transitive, state_eq. intros m1 m2 m3 H2 H3 s.
+    transitivity (m2 s).
+    + apply H2.
+    + apply H3.
 Qed.
 
-Program Instance stateT_monad_laws S M `{Monad M} `{MonadLaws M} :
+Program Instance stateT_monad_laws S M `{MonadLaws M} :
   MonadLaws (StateT S M).
-
-Obligation 2.
-unfold statet_eq.
-unfold stateT_bind, stateT_return.
-intros r.
-transitivity (bindM (m r) returnM).
-- f_equiv. intros [p1 p2] [p1' p2'].
-  intro Heq. rewrite Heq. reflexivity.
-- apply monad_right_id.
+Next Obligation.
+  unfold statet_eq, stateT_bind, stateT_return.
+  intros s.
+  rewrite monad_left_id.
+  reflexivity.
 Qed.
-
+Next Obligation.
+  unfold statet_eq.
+  unfold stateT_bind, stateT_return.
+  intros r.
+  transitivity (bindM (m r) returnM).
+    - f_equiv. intros [p1 p2] [p1' p2'].
+    intro Heq. rewrite Heq. reflexivity.
+    - apply monad_right_id.
+Qed.
+Next Obligation.
+  unfold statet_eq, stateT_bind.
+  intros s.
+  rewrite monad_assoc.
+  apply bindM_Proper.
+  - reflexivity.
+  - intros [a1 s1] [a2 s2] H1.
+    inversion H1.
+    reflexivity.  
+Qed.
+Next Obligation.
+  unfold stateT_bind.
+  intros m1 m2 Hm.
+  intros f1 f2 Hf.
+  intros s.
+  apply bindM_Proper.
+  - apply Hm.
+  - intros [a1 s1] [a2 s2] Hp.
+    inversion Hp.
+    apply Hf. reflexivity.
+Qed.
 
 (*rewrite monad_left_id.*)
-
-
-
-
-
-
-
-
-
 
 
 Definition liftT {S M A} `{Monad M} (ma : M A) : StateT S M A :=
@@ -1214,45 +1215,212 @@ Definition putT {S M} `{Monad M} (s' : S) : StateT S M unit :=
   fun _ => returnM (tt, s').
 
 
-
-(* Monad laws for StateT Monad Transformer *)
-
-(* Left Identity *)
-Lemma stateT_left_identity :
-  forall (S : Type) (M : Type -> Type) (MonadM : Monad M)
-         (A B : Type) (x : A) (f : A -> StateT S M B) (s : S),
-    stateT_bind (stateT_return x) f s = f x s.
+Lemma stateT_lift_return {S M A} `{MonadLaws M} (x : A) (s : S) :
+  liftT (returnM x) s == returnM (x, s).
 Proof.
-  intros. unfold stateT_bind, stateT_return.
+  unfold liftT.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+
+Lemma stateT_lift_bind {S M A B} `{Monad M} `{MonadLaws M}
+      (ma : M A) (f : A -> M B) :
+  stateT_bind (liftT ma : StateT S M A) (fun a => liftT (f a)) == liftT (bindM ma f).
+Proof.
+  unfold stateT_bind, liftT.
+  intros f1.  
+  rewrite ! monad_assoc.
+  f_equiv. intros x1 x ->.
+  rewrite monad_left_id. reflexivity.
+Qed.
+
+
+Lemma putT_putT {S M} `{Monad M} `{MonadLaws M} (s1 s2 : S) :
+  stateT_bind (putT s1) (fun _ => putT s2) == putT s2.
+Proof.
+  unfold stateT_bind, putT. intros f1.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+
+Lemma putT_getT_return {S M} `{Monad M} `{MonadLaws M} (s : S) :
+  stateT_bind (putT s) (fun _ => getT) == stateT_bind (putT s) (fun _ => stateT_return s).
+Proof.
+  unfold stateT_bind, putT, getT, stateT_return.
+  intros s0.
+  rewrite monad_left_id.
+  rewrite -> monad_left_id.
+  reflexivity.
+Qed.
+
+
+Lemma getT_bind {S M} `{Monad M} `{MonadLaws M} {A : Type} (f : S -> StateT S M A) :
+  stateT_bind getT f == fun s => f s s.
+Proof.
+  unfold eqM, stateT_bind, getT; intros s. simpl.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+Lemma putT_getT {S M} `{Monad M} `{MonadLaws M} (s : S) :
+  stateT_bind (putT s) (fun _ => getT) == fun _ => returnM (s, s).
+Proof.
+  unfold eqM, stateT_bind, putT, getT.
+  intros s0. simpl.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+
+
+Lemma getT_putT {S M} `{Monad M} `{MonadLaws M} (s : S):
+  stateT_bind (getT (S:=S)) (fun s => putT s) == stateT_return tt.
+Proof.
+  unfold stateT_bind, getT, putT, stateT_return; intros t.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+Lemma getT_getT {S M} `{Monad M} `{MonadLaws M} :
+  stateT_bind (getT : StateT S M S) (fun _ => getT) == getT.
+Proof.
+  unfold eqM, stateT_bind, getT.
+  intros s.
+  rewrite monad_left_id.
+  reflexivity.
+Qed.
+
+Require Import List.
+Import ListNotations.
+
+
+(* StateT monad transformer example: stack with push/pop operations *)
+
+Definition Stack := StateT (list nat) Exception.
+
+Definition push (n : nat) : Stack unit :=
+  fun s => returnM (tt, n :: s).
+
+Definition pop : Stack nat :=
+  fun s =>
+    match s with
+    | [] => Failure "Stack underflow"
+    | x :: xs => returnM (x, xs)
+    end.
+
+
+Lemma push_pop_eq_return :
+  forall n,
+    bindM (push n) (fun _ => pop) == returnM n.
+Proof.
+  intros n s.
+  unfold push, pop, bindM, StateT, returnM.
   simpl.
- Admitted.
+  reflexivity.
+Qed.
 
 
-(* Right Identity *)
-Lemma stateT_right_identity :
-  forall (S : Type) (M : Type -> Type) (MonadM : Monad M)
-         (A : Type) (m : StateT S M A),
-    stateT_bind m stateT_return = m.
+Lemma push_pop_preserves_tail :
+  forall n s,
+    bindM (push n) (fun _ => pop) s = Success (n, s).
 Proof.
-Admitted.
+  intros n s.
+  unfold push, pop, bindM, StateT, returnM.
+  simpl.
+  reflexivity.
+Qed.
 
-(* Associativity *)
-Lemma stateT_associativity :
-  forall (S : Type) (M : Type -> Type) (MonadM : Monad M)
-         (A B C : Type)
-         (m : StateT S M A)
-         (f : A -> StateT S M B)
-         (g : B -> StateT S M C),
-    stateT_bind (stateT_bind m f) g =
-    stateT_bind m (fun x => stateT_bind (f x) g).
+Lemma pop_empty_fails :
+  pop [] = Failure "Stack underflow".
 Proof.
-Admitted. 
+  unfold pop.
+  reflexivity.
+Qed.
+
+Definition push_push_pop (n1 n2 : nat) : Stack nat :=
+  bindM (push n1)
+        (fun _ => bindM (push n2)
+                        (fun _ => pop)).
+
+Lemma push_push_pop_top :
+  forall n1 n2 s,
+    push_push_pop n1 n2 s = Success (n2, n1 :: s).
+Proof.
+  intros n1 n2 s.
+  unfold push_push_pop, push, pop, bindM, StateT, returnM.
+  simpl.
+  reflexivity.
+Qed.
 
 
-(* liftT (returnM x) s = returnM (x, s) 
-Lemma StateT_lift_return
-*)
+Definition push_pop_push (n : nat) : Stack unit :=
+  bindM (push n)
+        (fun _ => bindM pop (fun _ => push n)).
 
-(* liftT (m >>= k) s = (liftT m >>= fun x => liftT (k x)) s
-Lemma StateT_lift_bind :
-*)
+Lemma push_pop_push_id :
+  forall n s,
+    push_pop_push n s = Success (tt, n :: s).
+Proof.
+  intros n s.
+  unfold push_pop_push, push, pop, bindM, StateT, returnM.
+  simpl.
+  reflexivity.
+Qed.
+
+
+(* Push then pop on an empty stack *)
+Compute (bindM (push 42) (fun _ => pop)) [].
+(* Success (42, []) *)
+
+(* Push then pop *)
+Compute (bindM (push 7) (fun _ => pop)) [1; 2; 3].
+(* Success (7, [1; 2; 3]) *)
+
+(* Pop from empty stack is a fail *)
+Compute pop [].
+(* Failure "Stack underflow" *)
+
+(* Push, then push, then pop *)
+Compute push_push_pop 10 20 [5; 6].
+(* Success (20, [10; 5; 6]) *)
+
+(* Push, pop, then push the same value *)
+Compute push_pop_push 99 [1; 2; 3].
+(* ===> Success (tt, [99; 1; 2; 3]) *)
+
+Fixpoint sequence {M : Type -> Type} `{Monad M} `{MonadLaws M}
+                  {A : Type} (ms : list (M A)) : M (list A) :=
+  match ms with
+  | [] => returnM []
+  | m :: ms' =>
+      bindM m (fun x =>
+      bindM (sequence ms') (fun xs =>
+      returnM (x :: xs)))
+  end.
+
+
+Fixpoint mapM {M : Type -> Type} `{Monad M} `{MonadLaws M}
+              {A B : Type} (f : A -> M B) (xs : list A) : M (list B) :=
+  match xs with
+  | [] => returnM []
+  | x :: xs' =>
+      bindM (f x) (fun y =>
+      bindM (mapM f xs') (fun ys =>
+      returnM (y :: ys)))
+  end.
+
+
+Lemma mapM_eq_sequence :
+  forall (M : Type -> Type) `{Monad M} `{MonadLaws M}
+         (A B : Type) (f : A -> M B) (xs : list A),
+    mapM f xs == sequence (map f xs).
+Proof.
+  intros.
+  induction xs as [| x xs IH].
+  - simpl. reflexivity.
+  - simpl. apply bindM_Proper.
+    * reflexivity.
+    * intros f1 y IH1. rewrite IH1. rewrite IH. reflexivity.
+Qed.
