@@ -1,5 +1,16 @@
 Require Import String.
 Open Scope string_scope.
+Require Import PeanoNat.
+Open Scope nat_scope.
+Require Import Coq.Strings.String.
+Require Import Coq.Numbers.DecimalString.
+Require Import Coq.Program.Wf.
+Require Import Lia.
+Require Import Coq.Strings.Ascii.
+From Coq Require Import Relations Classes.Equivalence Classes.Morphisms.
+Open Scope signature_scope.
+Require Import List.
+Import ListNotations.
 
 
 (* Maybe Monad *)
@@ -46,11 +57,9 @@ Inductive Exception (A : Type) : Type :=
 Arguments Success {A} x.
 Arguments Failure {A} x.
 
-Check Success.
 Definition exception_return {A : Type} (x : A) : Exception A :=
   Success x.
 
-Check Failure.
 Definition exception_bind {A B : Type} (m : Exception A) (f : A -> Exception B) : Exception B :=
   match m with
   | Success x => f x
@@ -145,7 +154,7 @@ Definition writer_return {A : Type} (x : A) : Writer A :=
 Definition writer_bind {A B : Type} (m : Writer A) (f : A -> Writer B) : Writer B :=
   let (a, log1) := m in
   let (b, log2) := f a in
-  (b, log1 ++ log2).
+  (b, String.append log1 log2).
 
 Definition tell (msg : string) : Writer unit :=
   (tt, msg).
@@ -171,15 +180,10 @@ Definition identity_bind {A B : Type} (m : Identity A) (f : A -> Identity B) : I
   f m.
 
 
-(* 
-
-PROOFS OF MONAD LAWS 
+(* PROOFS OF MONAD LAWS 
 1) Left Identity: bind (return x) f = f x
 2) Right Identity: bind m return = m
-3) Associativity: bind (bind m f) g = bind m (fun x => bind (f x) g)
-
-*)
-
+3) Associativity: bind (bind m f) g = bind m (fun x => bind (f x) g) *)
 
 
 (* Monad laws for Maybe Monad *)
@@ -218,7 +222,6 @@ Proof.
 Qed.
 
 
-
 (* Monad laws for Exception Monad *)
 
 (* Left Identity *)
@@ -253,7 +256,6 @@ Proof.
   - simpl. reflexivity.
   - simpl. reflexivity.
 Qed.
-
 
 
 (* Monad laws for State Monad *)
@@ -326,13 +328,8 @@ Qed.
 
 (* Monad laws for Writer Monad *)
 
-
-Require Import String.
-Open Scope string_scope.
-
-
 (* Helper Lemma to proof that: s ++ "" = s *)
-Lemma string_append_empty_r : forall s : string, s ++ "" = s.
+Lemma string_append_empty_r : forall s : string, append s "" = s.
 Proof.
   intros. induction s.
   - simpl. reflexivity.
@@ -341,7 +338,7 @@ Qed.
 
 
 (* Helper Lemma to proof that: s ++ "" = s *)
-Lemma string_append_assoc : forall a b c : string, (a ++ b) ++ c = a ++ (b ++ c).
+Lemma string_append_assoc : forall a b c : string, append (append a b) c = append a (append b c).
 Proof.
   intros. induction a as [| a' s' IH].
   - simpl. reflexivity.
@@ -414,23 +411,12 @@ Proof.
 Qed.
 
 
-
-
-
-
 (* This section contains examples that illustrate the practical usage of each monad that I implemented. 
-  Each example is designed to show how the monad handles specific computational effects, such as 
-  failure, state, or logging, using the helper functions defined earlier. *)
-
-
+Each example is designed to show how the monad handles specific computational effects, such as 
+failure, state, or logging, using the helper functions defined earlier. *)
 
 
 (* Maybe monad example: safe division and addition using the Maybe monad *)
-
-
-Require Import PeanoNat.
-Open Scope nat_scope.
-
 
 Definition safeDivide (n m : nat) : Maybe nat :=
   if m =? 0 then Nothing else Just (n / m).
@@ -445,11 +431,14 @@ Compute fromMaybe 0 exampleMaybe. (* Expected: 0,as result is Nothing *)
 
 
 Lemma safeDivide_by_zero : safeDivide 5 0 = Nothing.
-Proof. reflexivity. Qed.
+Proof. 
+  reflexivity. 
+Qed.
 
 Lemma plusMaybe_valid : plusMaybe (Just 3) (Just 4) = Just 7.
-Proof. simpl. reflexivity. Qed.
-
+Proof. 
+  simpl. reflexivity. 
+Qed.
 
 
 (* Exception monad example: user login with error handling *)
@@ -462,26 +451,28 @@ Definition login (u p : string) : Exception string :=
 
 (* Attempt a login with wrong password *)
 Definition exampleLogin1 := exception_bind (login "admin" "12345") 
-  (fun msg => Success ("Access granted: " ++ msg)).
+  (fun msg => Success (append "Access granted: " msg)).
 
 Compute getErrorMessage exampleLogin1.
 (* Expected: "Wrong password" *)
 
 (* Attempt a login with unknown user, and catch the error *)
 Definition exampleLogin2 :=
-  catch (login "guest" "1234") (fun err => Success ("Error: " ++ err)).
+  catch (login "guest" "1234") (fun err => Success (append "Error: " err)).
 
 Compute fromException "" exampleLogin2.
 (* Expected: "Error: User not found" *)
 
 
 Lemma login_fail : login "admin" "wrong" = Failure "Wrong password".
-Proof. reflexivity. Qed.
+Proof. 
+  reflexivity. 
+Qed.
 
 Lemma login_success : login "admin" "1234" = Success "Welcome!".
-Proof. reflexivity. Qed.
-
-
+Proof. 
+  reflexivity. 
+Qed.
 
 
 (* State moonad example: an increment operation that returns the current state and adds 1 *)
@@ -497,13 +488,14 @@ Compute exampleState 0.
 (* Expected result: (0, 1) *)
 
 Lemma exampleState_behavior : exampleState 1 = (1, 2).
-Proof. reflexivity. Qed.
+Proof. 
+  reflexivity. 
+Qed.
 
 
 (* Reader monad example: get a personalized greeting *)
 Definition getGreeting : Reader string string :=
-  fun name => "Hello, " ++ name ++ "!".
-
+  fun name => append (append "Hello, " name) "!".
 
 Definition politeGreet : Reader string string :=
   reader_bind getGreeting (fun msg =>
@@ -519,23 +511,14 @@ Compute politeGreet "Alice".
 Compute shoutGreeting "Bob".
 (* Expected: "Hello, ADMIN!" *)
 
-
 Lemma shoutGreeting_correct : shoutGreeting "ignored" = "Hello, ADMIN!".
-Proof. reflexivity. Qed.
-
-
+Proof. 
+  reflexivity. 
+Qed.
 
 
 (* Writer monad example: computing GCD with logging *)
 
-Require Import Coq.Strings.String.
-Require Import Coq.Numbers.DecimalString.
-Require Import Coq.Program.Wf.
-Require Import Lia.
-Require Import Coq.Strings.Ascii.
-
-
-Open Scope string_scope.
 
 Definition nat_to_string (n : nat) : string :=
   NilEmpty.string_of_uint (Nat.to_uint n).
@@ -565,15 +548,13 @@ Compute exampleGCD.
    (1, "8 mod 3 = 2
    3 mod 2 = 1
    2 mod 1 = 0
-   Finished with 1.")
-*)
+   Finished with 1.")*)
 
 
-(*
-  In addition to verifying the standard monad laws (left identity, right identity, associativity), many monads 
-  define specific operations with useful properties. These laws describe how monad-specific functions like 
-  [get], [put], [ask], [throw], or [tell] interact with return, bind or other specific functions.
-*)
+(* In addition to verifying the standard monad laws (left identity, right identity, associativity), 
+many monads define specific operations with useful properties. These laws describe how monad-specific
+functions like [get], [put], [ask], [throw], or [tell] interact with return, bind or other specific 
+functions. *)
 
 (* State‐specific interaction laws *)
 
@@ -586,7 +567,8 @@ Proof.
   intros. unfold state_bind, state_put. reflexivity.
 Qed.
 
-(* (put s >>= fun _ => get = put s >>= fun _ => return s): writing then reading the state returns that state *)
+(* (put s >>= fun _ => get = put s >>= fun _ => return s): writing then reading the state returns 
+that state *)
 Lemma put_get_return :
   forall (S : Type) (s : S),
     state_bind (state_put s) (fun _ => state_get )
@@ -604,7 +586,8 @@ Proof.
   intros. unfold state_bind, state_get. reflexivity.
 Qed.
 
-(* (put s >>= fun _ => get = put s >>= fun _ => return s): putting then getting equals putting then returning *)
+(* (put s >>= fun _ => get = put s >>= fun _ => return s): putting then getting equals putting 
+then returning *)
 Lemma put_get :
   forall (S : Type) (s : S),
     state_bind (state_put s) (fun _ => state_get)
@@ -613,7 +596,8 @@ Proof.
   intros. unfold state_bind, state_put, state_get, state_return. reflexivity.
 Qed.
 
-(* (get >>= fun s => put s = return tt): reading then writing the same state is a no-op *)
+(* (get >>= fun s => put s = return tt): reading then writing the same state has no effect on the 
+computation *)
 Lemma get_put :
   forall (S : Type),
     state_bind (state_get (S:=S)) (fun s => state_put s)
@@ -630,8 +614,6 @@ Lemma get_get :
 Proof.
   intros. unfold state_bind, state_get. reflexivity.
 Qed.
-
-
 
 
 (* Exception‐specific interaction laws *)
@@ -674,13 +656,11 @@ Proof.
 Qed.
 
 
-
-
 (* Reader‐specific interaction laws *)
 
 
-(* (local f ask = reader_bind ask (fun x => reader_return (f x))): pushing f into ask is same as binding ask and 
-    returning f x *)
+(* (local f ask = reader_bind ask (fun x => reader_return (f x))): pushing f into ask is same as 
+binding ask and returning f x *)
 Lemma local_ask_bind :
   forall (R A : Type) (f : R -> R),
     local f (ask )
@@ -698,7 +678,8 @@ Proof.
   intros. unfold local, reader_return. reflexivity.
 Qed.
 
-(* (local f (reader_bind m g) = reader_bind (local f m) (fun a => local f (g a))): local distributes over bind *)
+(* (local f (reader_bind m g) = reader_bind (local f m) (fun a => local f (g a))): local distributes 
+over bind *)
 Lemma local_bind :
   forall (R A B : Type) (f : R -> R) (m : Reader R A) (g : A -> Reader R B),
     local f (reader_bind m g)
@@ -744,13 +725,11 @@ Proof.
 Qed.
 
 
-
-
 (* Writer‐specific interaction laws *)
 
 
-(* (writer_bind (tell msg) (fun _ => writer_return tt) = tell msg): if a msg is logged then do nothing, the msg will 
-  still be in the log *)
+(* (writer_bind (tell msg) (fun _ => writer_return tt) = tell msg): if a msg is logged then do nothing, 
+the msg will still be in the log *)
 Lemma tell_return :
   forall (msg : string),
     writer_bind (tell msg) (fun _ => writer_return tt)
@@ -796,16 +775,9 @@ Proof.
 Qed.
 
 
-
-
-
-
 (* The State‐transformer type, parametrized by any base monad M with its own return and bind 
   operations. *)
 
-
-From Coq Require Import Relations Classes.Equivalence Classes.Morphisms.
-Open Scope signature_scope.
 
 Class Monad (M : Type -> Type) : Type := {
   returnM  : forall {A}, A -> M A ;
@@ -817,7 +789,6 @@ Arguments returnM  {M _ A} _.
 Arguments bindM {M _ A B} _ _.
 Arguments eqM {M _ A} _ _.
 Notation "x == y" := (eqM x y) (at level 80).
-
 
 Class MonadLaws (M : Type -> Type) `{Monad M} := {
     eqM_Equivalence :: forall A, Equivalence (@eqM M _ A);
@@ -999,7 +970,6 @@ Next Obligation.
 Qed.
 
 
-
 Definition state_eq {S A} : relation (State S A) :=
   fun m1 m2 => forall s, m1 s = m2 s.
 
@@ -1041,7 +1011,6 @@ Next Obligation.
 Qed.
 
 
-
 Definition identity_eq {A} : relation (Identity A) := fun x y => x = y.
 
 Instance identity_monad : Monad Identity := {
@@ -1077,7 +1046,6 @@ Next Obligation.
   rewrite Hm.
   apply Hf. reflexivity.
 Qed.
-
 
 
 Definition writer_eq {A} : relation (Writer A) := fun x y => x = y.
@@ -1202,8 +1170,6 @@ Next Obligation.
     apply Hf. reflexivity.
 Qed.
 
-(*rewrite monad_left_id.*)
-
 
 Definition liftT {S M A} `{Monad M} (ma : M A) : StateT S M A :=
   fun s => bindM ma (fun a => returnM (a, s)).
@@ -1274,7 +1240,6 @@ Proof.
 Qed.
 
 
-
 Lemma getT_putT {S M} `{Monad M} `{MonadLaws M} (s : S):
   stateT_bind (getT (S:=S)) (fun s => putT s) == stateT_return tt.
 Proof.
@@ -1282,6 +1247,7 @@ Proof.
   rewrite monad_left_id.
   reflexivity.
 Qed.
+
 
 Lemma getT_getT {S M} `{Monad M} `{MonadLaws M} :
   stateT_bind (getT : StateT S M S) (fun _ => getT) == getT.
@@ -1292,11 +1258,9 @@ Proof.
   reflexivity.
 Qed.
 
-Require Import List.
-Import ListNotations.
 
-
-(* StateT monad transformer example: stack with push/pop operations *)
+(* StateT monad transformer example: stack with push/pop operations, the first one being a normal stack
+and the second one is a stack made with getT, putT and liftT functions *)
 
 Definition Stack := StateT (list nat) Exception.
 
@@ -1310,13 +1274,23 @@ Definition pop : Stack nat :=
     | x :: xs => returnM (x, xs)
     end.
 
+Definition pushM (n : nat) : Stack unit :=
+  bindM getT (fun s =>
+  putT (n :: s)).
+
+Definition popM : Stack nat :=
+  bindM getT (fun s =>
+    match s with
+    | [] => liftT (throw "Stack underflow")
+    | x :: xs => bindM (putT xs) (fun _ => returnM x)
+    end).
 
 Lemma push_pop_eq_return :
   forall n,
     bindM (push n) (fun _ => pop) == returnM n.
 Proof.
   intros n s.
-  unfold push, pop, bindM, StateT, returnM.
+  unfold push, pop, bindM, returnM.
   simpl.
   reflexivity.
 Qed.
@@ -1327,7 +1301,7 @@ Lemma push_pop_preserves_tail :
     bindM (push n) (fun _ => pop) s = Success (n, s).
 Proof.
   intros n s.
-  unfold push, pop, bindM, StateT, returnM.
+  unfold push, pop, bindM.
   simpl.
   reflexivity.
 Qed.
@@ -1339,6 +1313,32 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma pushM_popM_eq_return :
+  forall n,
+    bindM (pushM n) (fun _ => popM) == returnM n.
+Proof.
+  intros n s.
+  unfold pushM, popM, bindM, returnM.
+  simpl. reflexivity.
+Qed.
+
+Lemma pushM_popM_preserves_tail :
+  forall n s,
+    bindM (pushM n) (fun _ => popM) s = Success (n, s).
+Proof.
+  intros n s.
+  unfold pushM, popM, bindM.
+  simpl. reflexivity.
+Qed.
+
+Lemma popM_empty_fails :
+  popM [] = Failure "Stack underflow".
+Proof.
+  unfold popM.
+  simpl. reflexivity.
+Qed.
+
+
 Definition push_push_pop (n1 n2 : nat) : Stack nat :=
   bindM (push n1)
         (fun _ => bindM (push n2)
@@ -1349,7 +1349,8 @@ Lemma push_push_pop_top :
     push_push_pop n1 n2 s = Success (n2, n1 :: s).
 Proof.
   intros n1 n2 s.
-  unfold push_push_pop, push, pop, bindM, StateT, returnM.
+  unfold push_push_pop.
+  unfold bindM, push, pop.
   simpl.
   reflexivity.
 Qed.
@@ -1364,7 +1365,7 @@ Lemma push_pop_push_id :
     push_pop_push n s = Success (tt, n :: s).
 Proof.
   intros n s.
-  unfold push_pop_push, push, pop, bindM, StateT, returnM.
+  unfold push_pop_push. unfold push, pop, bindM.
   simpl.
   reflexivity.
 Qed.
@@ -1388,7 +1389,7 @@ Compute push_push_pop 10 20 [5; 6].
 
 (* Push, pop, then push the same value *)
 Compute push_pop_push 99 [1; 2; 3].
-(* ===> Success (tt, [99; 1; 2; 3]) *)
+(* Success (tt, [99; 1; 2; 3]) *)
 
 Fixpoint sequence {M : Type -> Type} `{Monad M} `{MonadLaws M}
                   {A : Type} (ms : list (M A)) : M (list A) :=
@@ -1421,6 +1422,6 @@ Proof.
   induction xs as [| x xs IH].
   - simpl. reflexivity.
   - simpl. apply bindM_Proper.
-    * reflexivity.
-    * intros f1 y IH1. rewrite IH1. rewrite IH. reflexivity.
+    + reflexivity.
+    + intros f1 y IH1. rewrite IH1. rewrite IH. reflexivity.
 Qed.
